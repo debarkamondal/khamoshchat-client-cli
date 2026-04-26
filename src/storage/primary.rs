@@ -93,11 +93,12 @@ impl PrimaryDb {
 
     pub fn list_contacts(&self) -> Result<Vec<super::ChatSummary>> {
         let mut stmt = self.conn.prepare(
-            "SELECT display_name FROM contacts ORDER BY display_name",
+            "SELECT user_id, display_name FROM contacts ORDER BY display_name",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(super::ChatSummary {
-                name: row.get(0)?,
+                phone: row.get(0)?,
+                name: row.get(1)?,
                 last_message_at: "—".into(),
             })
         })?;
@@ -106,6 +107,54 @@ impl PrimaryDb {
             out.push(r?);
         }
         Ok(out)
+    }
+
+    /// Add a new contact.
+    pub fn add_contact(&self, phone: &str, name: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO contacts (user_id, display_name, identity_key, trust_level, created_at)
+             VALUES (?1, ?2, '', 0, ?3)",
+            params![phone, name, chrono::Utc::now().timestamp()],
+        )?;
+        Ok(())
+    }
+
+    /// List all contacts (phone + name only).
+    pub fn list_all_contacts(&self) -> Result<Vec<super::ContactSummary>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT user_id, display_name FROM contacts ORDER BY display_name")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(super::ContactSummary {
+                phone: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Return account + MQTT status snapshot.
+    pub fn account_status(&self) -> Result<super::AccountStatus> {
+        let (user_id, display_name) = self
+            .conn
+            .query_row(
+                "SELECT user_id, display_name FROM account WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .unwrap_or_default();
+
+            Ok(super::AccountStatus {
+                user_id: Some(user_id.clone()),
+                email: display_name,
+                phone: Some(user_id),
+                device_id: None,
+                mqtt_connected: false,
+            })
     }
 
     pub fn get_fingerprint(&self, contact: &str) -> Result<Option<String>> {

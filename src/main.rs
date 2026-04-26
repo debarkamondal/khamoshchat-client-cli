@@ -27,9 +27,8 @@ fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let matches = cli::build();
-    let cfg = cli::Config::from_matches(&matches)?;
+    let cli = cli::build();
 
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(client::run(cfg))
+    rt.block_on(client::run(cli))
 }

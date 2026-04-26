@@ -1,4 +1,5 @@
-//! Clap CLI definitions and config extraction.
+//! Clap CLI definitions — headless, integration-focused.
+//! Designed for use by GUI tools, other CLIs, and AI agents.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -6,7 +7,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "khamoshchat",
-    about = "E2EE CLI messenger for Khamoshchat",
+    about = "E2EE CLI messenger for Khamoshchat (headless)",
     version = "0.1.0"
 )]
 pub struct Cli {
@@ -16,74 +17,95 @@ pub struct Cli {
     /// Override config directory (default: ~/.config/khamoshchat/)
     #[arg(short, long)]
     pub config: Option<PathBuf>,
+
+    /// Output JSON instead of human-readable text.
+    /// Recommended when piping output to other programs.
+    #[arg(short, long)]
+    pub json: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// Register or re-link this device
+    /// Authenticate with Google OAuth and register this device.
     Auth {
-        /// Skip opening browser — print the URL instead
+        /// Skip opening browser — print the URL instead.
         #[arg(long)]
         no_open: bool,
     },
 
-    /// List all conversations
+    /// List all conversations with last-activity timestamp.
     List,
 
-    /// Open an interactive chat with a given contact
-    Chat {
-        /// Contact identifier (phone or registered username)
+    /// Retrieve message history for a contact.
+    History {
+        /// Contact identifier (phone or registered username).
         contact: String,
+
+        /// Maximum number of messages to return.
+        #[arg(long, default_value = "50")]
+        limit: u32,
+
+        /// Cursor: return messages before this message ID.
+        #[arg(long)]
+        before: Option<String>,
     },
 
-    /// Send a message without entering interactive mode
+    /// Send a one-shot E2EE message to a contact.
     Send {
-        /// Contact to message
+        /// Contact to message.
         contact: String,
-        /// Message text
+
+        /// Message text.
         #[arg(trailing_var_arg = true)]
         message: Vec<String>,
     },
 
-    /// Show the key fingerprint for a contact
+    /// Start a long-lived daemon that listens for incoming messages
+    /// and prints them as JSON Lines to stdout.
+    Daemon,
+
+    /// Manage contacts.
+    Contacts {
+        #[command(subcommand)]
+        sub: ContactCommands,
+    },
+
+    /// Show the safety-number fingerprint for a contact.
     Verify {
-        /// Contact identifier
+        /// Contact identifier.
         contact: String,
     },
 
-    /// Start background daemon (future)
-    Daemon {
-        /// PID file path
-        #[arg(long, default_value = "/run/khamoshchat.pid")]
-        pidfile: PathBuf,
+    /// Show connection and account status.
+    Status,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ContactCommands {
+    /// Add a new contact.
+    Add {
+        /// Phone number.
+        phone: String,
+
+        /// Display name.
+        name: String,
     },
+
+    /// List all registered contacts.
+    List,
 }
 
-/// Build the clap CLI.
-pub fn build() -> Cli {
-    Cli::parse()
-}
-
-/// Aggregated runtime config derived from CLI args + env.
-#[derive(Debug)]
-pub struct Config {
-    pub config_dir: PathBuf,
-    pub command: Commands,
-}
-
-impl Config {
-    pub fn from_matches(matches: &Cli) -> anyhow::Result<Self> {
-        let config_dir = matches.config.clone()
-            .unwrap_or_else(|| {
-                dirs::config_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join("khamoshchat")
-            });
-
-        std::fs::create_dir_all(&config_dir)?;
-        Ok(Self {
-            config_dir,
-            command: matches.command.clone(),
+impl Cli {
+    pub fn config_dir(&self) -> PathBuf {
+        self.config.clone().unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("khamoshchat")
         })
     }
+}
+
+/// Parse CLI arguments using clap.
+pub fn build() -> Cli {
+    Cli::parse()
 }
